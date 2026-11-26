@@ -1,168 +1,118 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WattWise - Monitoring Listrik Total</title>
-  <script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
-  <style>
-    :root { --bg:#f4f6fb; --card:#fff; --ink:#182230; --muted:#687386; --blue:#2563eb; --green:#138a60; --red:#c24141; }
-    * { box-sizing:border-box; }
-    body { margin:0; font-family:Arial,Helvetica,sans-serif; background:var(--bg); color:var(--ink); }
-    .wrap { max-width:850px; margin:auto; padding:20px 15px 40px; }
-    header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px; }
-    h1 { font-size:23px; margin:0 0 5px; }
-    .sub { color:var(--muted); font-size:13px; }
-    .status { border-radius:30px; padding:8px 12px; background:#fee2e2; color:#991b1b; font-size:12px; font-weight:bold; white-space:nowrap; }
-    .status.online { background:#dcfce7; color:#166534; }
-    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-    .card { background:var(--card); border-radius:16px; padding:17px; box-shadow:0 3px 14px #1822300c; }
-    .metric-label { color:var(--muted); font-size:13px; margin-bottom:9px; }
-    .metric { font-size:27px; font-weight:750; letter-spacing:-.5px; }
-    .unit { color:var(--muted); font-size:13px; font-weight:normal; }
-    h2 { font-size:17px; margin:22px 0 11px; }
-    .device { display:flex; justify-content:space-between; align-items:center; gap:12px; }
-    .device-name { font-weight:bold; }
-    .device-desc { color:var(--muted); font-size:12px; margin-top:4px; }
-    button { border:0; border-radius:10px; padding:10px 17px; color:white; font-weight:bold; background:var(--green); min-width:75px; cursor:pointer; }
-    button.off { background:#64748b; }
-    button:disabled { opacity:.45; cursor:not-allowed; }
-    .note { margin-top:15px; padding:12px 14px; border-radius:12px; background:#eaf1ff; color:#254b91; font-size:12px; line-height:1.5; }
-    .foot { margin-top:14px; color:var(--muted); font-size:11px; line-height:1.5; }
-    @media(max-width:480px) {
-      .wrap { padding:16px 12px 30px; }
-      h1 { font-size:20px; }
-      .metric { font-size:23px; }
-      .card { padding:14px; }
-      header { align-items:flex-start; }
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Smart Energy Monitor</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#172033;background:#f3f6fb}
+*{box-sizing:border-box}body{margin:0;padding:18px;max-width:760px;margin:auto}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:8px 0 18px}
+h1{font-size:22px;margin:0}p{color:#64748b;margin:4px 0 0;font-size:13px}
+.pill{font-size:12px;padding:7px 10px;border-radius:20px;background:#fee2e2;color:#991b1b}
+.pill.ok{background:#dcfce7;color:#166534}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.card{background:white;border:1px solid #e5eaf2;border-radius:16px;padding:15px;box-shadow:0 2px 8px #0f172a08}
+.kicker{font-size:12px;color:#64748b}.big{font-size:25px;font-weight:750;margin-top:5px}
+.devices{display:grid;gap:12px;margin-top:12px}
+.device-head{display:flex;justify-content:space-between;align-items:center}
+.device-name{font-weight:700;text-transform:capitalize}
+.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin:13px 0}
+.metric span{display:block;font-size:11px;color:#64748b}.metric b{font-size:15px}
+button{border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer;background:#2563eb;color:white}
+button.off{background:#475569}button:disabled{opacity:.45;cursor:not-allowed}
+.note{font-size:12px;line-height:1.5;color:#64748b;margin:16px 2px}
+input{width:105px;padding:8px;border:1px solid #cbd5e1;border-radius:8px}
+.tariff{display:flex;align-items:center;justify-content:space-between;gap:8px}
+@media(max-width:420px){body{padding:12px}.big{font-size:22px}}
+</style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div>
-      <h1>WattWise</h1>
-      <div class="sub">Pemantauan konsumsi listrik total</div>
-    </div>
-    <div id="connection" class="status">Menghubungkan...</div>
-  </header>
-
-  <div class="grid">
-    <div class="card"><div class="metric-label">Tegangan</div><div class="metric"><span id="voltage">--</span> <span class="unit">V</span></div></div>
-    <div class="card"><div class="metric-label">Arus total</div><div class="metric"><span id="current">--</span> <span class="unit">A</span></div></div>
-    <div class="card"><div class="metric-label">Daya total</div><div class="metric"><span id="power">--</span> <span class="unit">W</span></div></div>
-    <div class="card"><div class="metric-label">Energi terpakai</div><div class="metric"><span id="energy">--</span> <span class="unit">kWh</span></div></div>
-    <div class="card"><div class="metric-label">Estimasi biaya</div><div class="metric">Rp <span id="cost">--</span></div></div>
-    <div class="card"><div class="metric-label">Beban aktif</div><div class="metric"><span id="activeCount">--</span> <span class="unit">/ 4 perangkat</span></div></div>
-  </div>
-
-  <h2>Kontrol perangkat</h2>
-  <div class="grid">
-    <div class="card device"><div><div class="device-name">💡 Lampu</div><div class="device-desc" id="state-lampu">Status: menunggu data</div></div><button id="btn-lampu" disabled>OFF</button></div>
-    <div class="card device"><div><div class="device-name">🌀 Kipas</div><div class="device-desc" id="state-kipas">Status: menunggu data</div></div><button id="btn-kipas" disabled>OFF</button></div>
-    <div class="card device"><div><div class="device-name">📺 TV</div><div class="device-desc" id="state-tv">Status: menunggu data</div></div><button id="btn-tv" disabled>OFF</button></div>
-    <div class="card device"><div><div class="device-name">❄️ AC</div><div class="device-desc" id="state-ac">Status: menunggu data</div></div><button id="btn-ac" disabled>OFF</button></div>
-  </div>
-
-  <div class="note">
-    <b>Catatan simulasi:</b> satu potensiometer pada Wokwi mewakili perubahan arus total seluruh beban.
-    Empat tombol hanya mengatur status perangkat/LED. Nilai arus bukan hasil pengukuran sensor PZEM nyata.
-  </div>
-  <div class="foot">
-    Tarif simulasi: Rp 1.500/kWh. Waktu simulasi dipercepat (1 detik nyata = 1 menit simulasi).
-    Energi dan biaya terakumulasi selama minimal satu perangkat ON dan akan kembali nol jika ESP32 di-reset.
-  </div>
+<header>
+ <div><h1>Smart Energy Monitor</h1><p>Monitoring konsumsi listrik per perangkat</p></div>
+ <span id="connection" class="pill">Menghubungkan…</span>
+</header>
+<section class="grid">
+ <div class="card"><div class="kicker">Total daya saat ini</div><div class="big" id="totalPower">— W</div></div>
+ <div class="card"><div class="kicker">Total energi</div><div class="big" id="totalEnergy">— kWh</div></div>
+ <div class="card"><div class="kicker">Estimasi biaya</div><div class="big" id="totalCost">—</div></div>
+ <div class="card"><div class="kicker">Perangkat aktif</div><div class="big" id="activeCount">— / 4</div></div>
+</section>
+<div class="card" style="margin-top:12px">
+ <div class="tariff"><div><b>Tarif listrik simulasi</b><p>Rupiah per kWh</p></div><input id="tariff" type="number" min="0" value="1500"></div>
 </div>
-
+<h3 style="margin:22px 2px 8px">Perangkat</h3>
+<section id="devices" class="devices"></section>
+<p class="note">Data berasal dari simulasi ESP32 di Wokwi melalui MQTT. Potensiometer hanya menyimulasikan input sensor arus. Tegangan diasumsikan 220 V, faktor daya diasumsikan 1, dan waktu simulasi dipercepat (1 detik nyata = 1 menit simulasi). Broker publik tidak memiliki autentikasi/topik privat; gunakan hanya untuk demo dan ganti topic base agar unik.</p>
 <script>
-  // HARUS SAMA dengan TOPIC_BASE pada sketch.ino
-  const TOPIC_BASE = "UAS_MIKON_KEL_1";
-  const MQTT_URL = "wss://test.mosquitto.org:8081";
+const TOPIC_BASE = "energy-monitor-demo-ganti-dengan-id-kelompok";
+const BROKER_URL = "wss://test.mosquitto.org:8081";
+const names = ["lampu","kipas","tv","ac"];
+const labels = {lampu:"Lampu",kipas:"Kipas angin",tv:"Televisi",ac:"AC"};
+const state = {};
+const conn = document.getElementById("connection");
+const container = document.getElementById("devices");
 
-  const connectionEl = document.getElementById("connection");
-  const devices = ["lampu", "kipas", "tv", "ac"];
-  let latestState = { lampu:false, kipas:false, tv:false, ac:false };
+function money(n){return new Intl.NumberFormat("id-ID",{style:"currency",currency:"IDR",maximumFractionDigits:0}).format(n||0)}
+function renderDevice(name,d){
+ const on = !!d.on;
+ const el = document.getElementById("device-"+name);
+ if(!el) return;
+ el.querySelector(".status").textContent = on ? "ON" : "OFF";
+ el.querySelector(".status").className = "status pill "+(on?"ok":"");
+ el.querySelector(".current").textContent = (d.current||0).toFixed(3)+" A";
+ el.querySelector(".power").textContent = (d.power||0).toFixed(1)+" W";
+ el.querySelector(".energy").textContent = (d.energy||0).toFixed(5)+" kWh";
+ el.querySelector(".cost").textContent = money((d.energy||0)*Number(document.getElementById("tariff").value||0));
+ const btn=el.querySelector("button");
+ btn.textContent=on?"Matikan":"Nyalakan";
+ btn.className=on?"off":"";
+ btn.dataset.next=on?"OFF":"ON";
+}
+names.forEach(name=>{
+ const el=document.createElement("article");
+ el.className="card";el.id="device-"+name;
+ el.innerHTML=`<div class="device-head"><span class="device-name">${labels[name]}</span><span class="status pill">Menunggu data</span></div>
+ <div class="metrics">
+ <div class="metric"><span>Arus</span><b class="current">— A</b></div>
+ <div class="metric"><span>Daya</span><b class="power">— W</b></div>
+ <div class="metric"><span>Energi</span><b class="energy">— kWh</b></div>
+ <div class="metric"><span>Estimasi biaya</span><b class="cost">—</b></div>
+ </div><button disabled>Menunggu koneksi</button>`;
+ el.querySelector("button").addEventListener("click",()=>{
+   const next=el.querySelector("button").dataset.next;
+   if(client && client.connected && next) client.publish(`${TOPIC_BASE}/cmd/${name}`,next);
+ });
+ container.appendChild(el);
+});
 
-  const client = mqtt.connect(MQTT_URL, {
-    clientId: "WattWiseWeb_" + Math.random().toString(16).slice(2, 10),
-    clean: true,
-    connectTimeout: 15000,
-    reconnectPeriod: 5000,
-    keepalive: 30,
-    protocolVersion: 4,
-    clean: true
-  });
-
-  client.on("connect", () => {
-    connectionEl.textContent = "Terhubung";
-    connectionEl.classList.add("online");
-    client.subscribe(TOPIC_BASE + "/telemetry");
-    devices.forEach(name => {
-      document.getElementById("btn-" + name).disabled = false;
-    });
-  });
-
-  client.on("reconnect", () => {
-    connectionEl.textContent = "Mencoba menghubungkan...";
-    connectionEl.classList.remove("online");
-  });
-
-  client.on("close", () => {
-    if (!client.connected) {
-      connectionEl.textContent = "Koneksi terputus";
-      connectionEl.classList.remove("online");
-    }
-  });
-
-  client.on("offline", () => {
-    connectionEl.textContent = "Terputus";
-    connectionEl.classList.remove("online");
-    devices.forEach(name => document.getElementById("btn-" + name).disabled = true);
-  });
-
-  client.on("error", err => {
-    console.error("MQTT error:", err);
-    connectionEl.textContent = "Gagal terhubung";
-    connectionEl.classList.remove("online");
-  });
-
-  client.on("message", (topic, message) => {
-    if (topic !== TOPIC_BASE + "/telemetry") return;
-
-    try {
-      const data = JSON.parse(message.toString());
-      setText("voltage", Number(data.voltage).toFixed(1));
-      setText("current", Number(data.current).toFixed(3));
-      setText("power", Number(data.power).toFixed(1));
-      setText("energy", Number(data.energy).toFixed(6));
-      setText("cost", Math.round(Number(data.cost)).toLocaleString("id-ID"));
-      setText("activeCount", data.activeCount);
-
-      devices.forEach(name => {
-        latestState[name] = Boolean(data[name]);
-        const button = document.getElementById("btn-" + name);
-        const stateText = document.getElementById("state-" + name);
-        button.textContent = latestState[name] ? "ON" : "OFF";
-        button.classList.toggle("off", !latestState[name]);
-        stateText.textContent = "Status: " + (latestState[name] ? "Menyala" : "Mati");
-      });
-    } catch (e) {
-      console.error("Data telemetry tidak valid:", e);
-    }
-  });
-
-  function setText(id, value) {
-    document.getElementById(id).textContent = value;
-  }
-
-  devices.forEach(name => {
-    document.getElementById("btn-" + name).addEventListener("click", () => {
-      if (!client.connected) return;
-      const nextState = !latestState[name];
-      client.publish(TOPIC_BASE + "/cmd/" + name, nextState ? "ON" : "OFF");
-    });
-  });
+let client;
+try{
+ client=mqtt.connect(BROKER_URL,{clientId:"energyDash_"+Math.random().toString(16).slice(2),connectTimeout:10000,reconnectPeriod:3000,clean:true});
+ client.on("connect",()=>{
+   conn.textContent="MQTT terhubung";conn.className="pill ok";
+   client.subscribe(`${TOPIC_BASE}/telemetry`);
+   document.querySelectorAll("button").forEach(b=>b.disabled=false);
+ });
+ client.on("reconnect",()=>{conn.textContent="Menyambungkan ulang…";conn.className="pill"});
+ client.on("offline",()=>{conn.textContent="Offline";conn.className="pill"});
+ client.on("error",e=>{conn.textContent="Koneksi error";conn.className="pill";console.error(e)});
+ client.on("message",(topic,message)=>{
+   try{
+     const data=JSON.parse(message.toString());
+     names.forEach(n=>{if(data[n]){state[n]=data[n];renderDevice(n,data[n]);}});
+     const total=data.total||{};
+     document.getElementById("totalPower").textContent=(total.power||0).toFixed(1)+" W";
+     document.getElementById("totalEnergy").textContent=(total.energy||0).toFixed(5)+" kWh";
+     document.getElementById("totalCost").textContent=money((total.energy||0)*Number(document.getElementById("tariff").value||0));
+     document.getElementById("activeCount").textContent=names.filter(n=>state[n]&&state[n].on).length+" / 4";
+   }catch(e){console.error("Payload MQTT tidak valid",e)}
+ });
+}catch(e){conn.textContent="MQTT gagal";console.error(e)}
+document.getElementById("tariff").addEventListener("input",()=>{
+ names.forEach(n=>{if(state[n])renderDevice(n,state[n])});
+});
 </script>
 </body>
 </html>
